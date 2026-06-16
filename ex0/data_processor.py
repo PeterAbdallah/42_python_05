@@ -5,7 +5,7 @@ from typing import Any, Sequence
 
 
 class DataProcessor(ABC):
-    def __init__(self):
+    def __init__(self) -> None:
         self._tuples: list[tuple[int, str]] = []
         self._rank = 0
 
@@ -67,15 +67,12 @@ class TextProcessor(DataProcessor):
 
 class LogProcessor(DataProcessor):
     def validate(self, data: Any) -> bool:
-        def check_dict(d: dict):
-            if (isinstance(d, dict)
-                    and ("log_level" in d)
-                    and ("log_message" in d)
-                    and isinstance(d["log_level"], str)
-                    and isinstance(d["log_message"], str)):
-                return True
-            else:
-                return False
+        def check_dict(d: dict[str, str]) -> bool:
+            return (
+                isinstance(d, dict)
+                and all(isinstance(k, str) for k in d.keys())
+                and all(isinstance(v, str) for v in d.values())
+            )
 
         if isinstance(data, dict):
             return check_dict(data)
@@ -84,13 +81,13 @@ class LogProcessor(DataProcessor):
             return all(check_dict(d) for d in data)
         return False
 
-    def ingest(self, data: dict | list[dict]) -> None:
+    def ingest(self, data: dict[str, str] | list[dict[str, str]]) -> None:
         print(f"Processing data: {data}")
         if not self.validate(data):
             raise ValueError("Improper Log data")
 
-        def format_output(d: dict) -> str:
-            return f'{d["log_level"]} : {d["log_message"]}'
+        def format_output(d: dict[str, str]) -> str:
+            return ": ".join(d.values())
 
         if isinstance(data, dict):
             self._tuples.append((self._rank, format_output(data)))

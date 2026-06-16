@@ -5,9 +5,10 @@ from typing import Any, Sequence, Protocol
 
 
 class DataProcessor(ABC):
-    def __init__(self):
+    def __init__(self) -> None:
         self._tuples: list[tuple[int, str]] = []
         self._rank = 0
+        self._type: str = ""
 
     @abstractmethod
     def validate(self, data: Any) -> bool:
@@ -24,7 +25,7 @@ class DataProcessor(ABC):
 
 
 class NumericProcessor(DataProcessor):
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__()
         self._type = "Numeric Processor"
 
@@ -48,7 +49,7 @@ class NumericProcessor(DataProcessor):
 
 
 class TextProcessor(DataProcessor):
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__()
         self._type = "Text Processor"
 
@@ -72,20 +73,17 @@ class TextProcessor(DataProcessor):
 
 
 class LogProcessor(DataProcessor):
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__()
         self._type = "Log Processor"
 
     def validate(self, data: Any) -> bool:
-        def check_dict(d: dict):
-            if (isinstance(d, dict)
-                    and ("log_level" in d)
-                    and ("log_message" in d)
-                    and isinstance(d["log_level"], str)
-                    and isinstance(d["log_message"], str)):
-                return True
-            else:
-                return False
+        def check_dict(d: dict[str, str]) -> bool:
+            return (
+                isinstance(d, dict)
+                and all(isinstance(k, str) for k in d.keys())
+                and all(isinstance(v, str) for v in d.values())
+            )
 
         if isinstance(data, dict):
             return check_dict(data)
@@ -94,12 +92,12 @@ class LogProcessor(DataProcessor):
             return all(check_dict(d) for d in data)
         return False
 
-    def ingest(self, data: dict | list[dict]) -> None:
+    def ingest(self, data: dict[str, str] | list[dict[str, str]]) -> None:
         if not self.validate(data):
             raise ValueError("Improper Log data")
 
-        def format_output(d: dict) -> str:
-            return f'{d["log_level"]} : {d["log_message"]}'
+        def format_output(d: dict[str, str]) -> str:
+            return ": ".join(d.values())
 
         if isinstance(data, dict):
             self._tuples.append((self._rank, format_output(data)))
@@ -110,15 +108,14 @@ class LogProcessor(DataProcessor):
                 self._rank += 1
 
 
-# TODO
 class ExportPlugin(Protocol):
     def process_output(self, data: list[tuple[int, str]]) -> None:
         pass
 
 
 class DataStream():
-    def __init__(self):
-        self._processors = []
+    def __init__(self) -> None:
+        self._processors: list[DataProcessor] = []
 
     def register_processor(self, proc: DataProcessor) -> None:
         self._processors.append(proc)
@@ -136,7 +133,7 @@ class DataStream():
 {item}")
 
     def print_processors_stats(self) -> None:
-        print("== DataStream Statistics ==")
+        print("\n== DataStream Statistics ==")
         # verify if processors exist
         if not self._processors:
             raise IndexError("No processor found, no data")
@@ -146,10 +143,16 @@ class DataStream():
             print(f"{proc._type}: total {processed} items processed,\
 remaining {remaining} on processor")
 
-    # TODO
     def output_pipeline(self, nb: int, plugin: ExportPlugin) -> None:
-        for i in range(nb):
-            plugin.process_output()
+        for proc in self._processors:
+            data: list[tuple[int, str]] = []
+            for _ in range(nb):
+                try:
+                    data.append(proc.output())
+                except IndexError:
+                    break
+            if data:
+                plugin.process_output(data)
 
 
 class CSVPlugin():
@@ -159,17 +162,34 @@ class CSVPlugin():
         print(",".join(values))
 
 
-def data_stream() -> None:
-    print("=== Code Nexus - Data Stream ===\n")
+class JSONPlugin():
+    def process_output(self, data: list[tuple[int, str]]) -> None:
+        values = [f'"item_{k}": "{v}"' for k, v in data]
+        print("JSON Output:")
+        print("{" + ", ".join(values) + "}")
+
+
+def data_pipeline() -> None:
+    print("=== Code Nexus - Pipeline ===\n")
+
     data = ['Hello world', [3.14, -1, 2.71],
             [{'log_level': 'WARNING',
               'log_message': 'Telnet access! Use ssh instead'},
             {'log_level': 'INFO',
                 'log_message': 'User wil isconnected'}], 42, ['Hi', 'five']]
+
+    data2 = [21, ['I love AI', 'LLMs are wonderful', 'Stay healthy'],
+             [{'log_level': 'ERROR', 'log_message': '500 server crash'},
+              {'log_level': 'NOTICE',
+               'log_message': 'Certificate expires in 10 days'}],
+             [32, 42, 64, 84, 128, 168], 'World hello']
+
     stream = DataStream()
     num = NumericProcessor()
     text = TextProcessor()
     log = LogProcessor()
+    csv_plug = CSVPlugin()
+    json_plug = JSONPlugin()
 
     print("Initialize Data Stream...")
     try:
@@ -177,32 +197,34 @@ def data_stream() -> None:
     except Exception as e:
         print(e)
 
-    print("\nRegistering Numeric Processor\n")
+    print("\nRegistering Processors\n")
     stream.register_processor(num)
-    print(f"Send first batch of data on stream: {data}")
-    stream.process_stream(data)
-    try:
-        stream.print_processors_stats()
-    except Exception as e:
-        print(e)
-
-    print("\nRegistering other data processors")
     stream.register_processor(text)
     stream.register_processor(log)
-    print("Send the same batch again")
+
+    print("Send first batch of data on stream:")
     stream.process_stream(data)
     try:
         stream.print_processors_stats()
     except Exception as e:
         print(e)
 
-    print("\nConsume some elements from the data processors:\
-Numeric 3, Text 2, Log 1")
-    for _ in range(3):
-        num.output()
-    for _ in range(2):
-        text.output()
-    log.output()
+    print("\nSend 3 processed data from each processor to a CSV plugin:")
+    stream.output_pipeline(3, csv_plug)
+    try:
+        stream.print_processors_stats()
+    except Exception as e:
+        print(e)
+
+    print("Send another batch of data:")
+    stream.process_stream(data2)
+    try:
+        stream.print_processors_stats()
+    except Exception as e:
+        print(e)
+
+    print("\nSend 5 processed data from each processor to a JSON plugin:")
+    stream.output_pipeline(5, json_plug)
     try:
         stream.print_processors_stats()
     except Exception as e:
@@ -210,4 +232,4 @@ Numeric 3, Text 2, Log 1")
 
 
 if __name__ == "__main__":
-    data_stream()
+    data_pipeline()
