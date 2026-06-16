@@ -87,7 +87,7 @@ class LogProcessor(DataProcessor):
             raise ValueError("Improper Log data")
 
         def format_output(d: dict[str, str]) -> str:
-            return f'{d["log_level"]} : {d["log_message"]}'
+            return ": ".join(d.values())
 
         if isinstance(data, dict):
             self._tuples.append((self._rank, format_output(data)))
